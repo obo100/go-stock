@@ -23,7 +23,6 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // @Author spark
@@ -839,7 +838,7 @@ func (o *OpenAi) NewChatStream(stock, stockCode, userQuestion string, sysPromptI
 					"question":     question,
 					"extraContent": "***❗获取股票价格失败,分析结果可能不准确***<hr>",
 				}
-				go runtime.EventsEmit(o.ctx, "warnMsg", "❗获取股票价格失败,分析结果可能不准确")
+				go Emit(o.ctx, "warnMsg", "❗获取股票价格失败,分析结果可能不准确")
 				return
 			}
 			price := ""
@@ -873,7 +872,7 @@ func (o *OpenAi) NewChatStream(stock, stockCode, userQuestion string, sysPromptI
 					"question":     question,
 					"extraContent": "***❗获取股票财报失败,分析结果可能不准确***<hr>",
 				}
-				go runtime.EventsEmit(o.ctx, "warnMsg", "❗获取股票财报失败,分析结果可能不准确")
+				go Emit(o.ctx, "warnMsg", "❗获取股票财报失败,分析结果可能不准确")
 				return
 			}
 			msg = append(msg, map[string]interface{}{
@@ -894,7 +893,7 @@ func (o *OpenAi) NewChatStream(stock, stockCode, userQuestion string, sysPromptI
 			if messages == nil || len(*messages) == 0 {
 				logger.SugaredLogger.Error("获取市场资讯失败")
 				//ch <- "***❗获取市场资讯失败,分析结果可能不准确***<hr>"
-				//go runtime.EventsEmit(o.ctx, "warnMsg", "❗获取市场资讯失败,分析结果可能不准确")
+				//go Emit(o.ctx, "warnMsg", "❗获取市场资讯失败,分析结果可能不准确")
 				return
 			}
 			var messageText strings.Builder
@@ -918,7 +917,7 @@ func (o *OpenAi) NewChatStream(stock, stockCode, userQuestion string, sysPromptI
 		//	if messages == nil || len(*messages) == 0 {
 		//		logger.SugaredLogger.Error("获取股票资讯失败")
 		//		//ch <- "***❗获取股票资讯失败,分析结果可能不准确***<hr>"
-		//		//go runtime.EventsEmit(o.ctx, "warnMsg", "❗获取股票资讯失败,分析结果可能不准确")
+		//		//go Emit(o.ctx, "warnMsg", "❗获取股票资讯失败,分析结果可能不准确")
 		//		return
 		//	}
 		//	for _, message := range *messages {
@@ -934,7 +933,7 @@ func (o *OpenAi) NewChatStream(stock, stockCode, userQuestion string, sysPromptI
 			if messages == nil || len(*messages) == 0 {
 				logger.SugaredLogger.Error("获取股票电报资讯失败")
 				//ch <- "***❗获取股票电报资讯失败,分析结果可能不准确***<hr>"
-				//go runtime.EventsEmit(o.ctx, "warnMsg", "❗获取股票电报资讯失败,分析结果可能不准确")
+				//go Emit(o.ctx, "warnMsg", "❗获取股票电报资讯失败,分析结果可能不准确")
 				return
 			}
 			var newsText strings.Builder

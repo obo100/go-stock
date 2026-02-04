@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,13 @@ func InitLogger() {
 	//获取编码器
 	encoder := getEncoder()
 
+	stdoutEnabled := true
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("GO_STOCK_LOG_STDOUT"))); v != "" {
+		if v == "0" || v == "false" || v == "no" {
+			stdoutEnabled = false
+		}
+	}
+
 	//日志级别
 	highPriority := zap.LevelEnablerFunc(func(lev zapcore.Level) bool { //error级别
 		return lev >= zap.ErrorLevel
@@ -33,11 +41,18 @@ func InitLogger() {
 	//error文件WriteSyncer
 	errorFileWriteSyncer := getErrorWriterSyncer()
 
+	infoWriteSyncer := infoFileWriteSyncer
+	errorWriteSyncer := errorFileWriteSyncer
+	if stdoutEnabled {
+		infoWriteSyncer = zapcore.NewMultiWriteSyncer(infoFileWriteSyncer, zapcore.AddSync(os.Stdout))
+		errorWriteSyncer = zapcore.NewMultiWriteSyncer(errorFileWriteSyncer, zapcore.AddSync(os.Stdout))
+	}
+
 	//生成core
 	//multiWriteSyncer := zapcore.NewMultiWriteSyncer(writerSyncer, zapcore.AddSync(os.Stdout)) //AddSync将io.Writer转换成WriteSyncer的类型
 	//同时输出到控制台 和 指定的日志文件中
-	infoFileCore := zapcore.NewCore(encoder, zapcore.NewMultiWriteSyncer(infoFileWriteSyncer, zapcore.AddSync(os.Stdout)), lowPriority)
-	errorFileCore := zapcore.NewCore(encoder, zapcore.NewMultiWriteSyncer(errorFileWriteSyncer, zapcore.AddSync(os.Stdout)), highPriority)
+	infoFileCore := zapcore.NewCore(encoder, infoWriteSyncer, lowPriority)
+	errorFileCore := zapcore.NewCore(encoder, errorWriteSyncer, highPriority)
 
 	//将infocore 和 errcore 加入core切片
 	var coreArr []zapcore.Core
