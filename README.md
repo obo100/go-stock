@@ -3,11 +3,11 @@
 ### 如何使用 CLI
 
 1. 执行 `go build -o go-stock-cli ./cmd/go-stock-cli`
-2. 运行 `go-stock-cli init` 初始化库。
-3. 使用 `go-stock-cli config add-ai` 配置模型
+2. 运行 `./go-stock-cli init` 初始化库。
+3. 使用 `./go-stock-cli config add-ai` 配置模型
 
 ```
-go-stock-cli config add-ai `
+./go-stock-cli config add-ai `
   --name "deepseek" `
   --base-url "https://api.deepseek.com" `
   --api-key "YOUR_API_KEY" `
