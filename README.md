@@ -7,13 +7,14 @@
 3. 使用 `./go-stock-cli config add-ai` 配置模型
 
 ```
-./go-stock-cli config add-ai `
-  --name "deepseek" `
-  --base-url "https://api.deepseek.com" `
-  --api-key "YOUR_API_KEY" `
-  --model "deepseek-reasoner" `
-  --ai-timeout 180
+./go-stock-cli config add-ai --name "deepseek" --base-url "https://api.deepseek.com" --api-key "YOUR_API_KEY" --model "deepseek-reasoner" --ai-timeout 120
 ```
+
+> Windows 桌面编译将 go-stock-cli 改为 go-stock-cli.exe，然后运行 .\go-stock-cli.exe init
+> 
+> 模型使用兼容 OpenAI 接口，如：deepseek
+> 
+> --ai-timeout 120 表示模型超时时间
 
 ## ![go-stock](./build/appicon.png)
 
