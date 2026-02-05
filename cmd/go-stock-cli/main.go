@@ -467,6 +467,8 @@ func runConfig(args []string) int {
 		return runConfigAddAI(args[1:])
 	case "list-ai":
 		return runConfigListAI(args[1:])
+	case "set-qgqp":
+		return runConfigSetQgqp(args[1:])
 	default:
 		fmt.Fprintln(os.Stderr, "未知 config 子命令")
 		return 1
@@ -739,6 +741,31 @@ func runConfigAddAI(args []string) int {
 		HttpProxyEnabled: *httpProxyEnabled,
 	})
 	msg := data.UpdateConfig(cfg)
+	fmt.Println(msg)
+	return 0
+}
+
+func runConfigSetQgqp(args []string) int {
+	fs := flag.NewFlagSet("config set-qgqp", flag.ContinueOnError)
+	g, format, timeout, quiet := parseGlobalFlags(fs)
+	qgqpBId := fs.String("qgqp-b-id", "", "东财 qgqp_b_id")
+	if hasHelp(args) {
+		fs.Usage()
+		return 0
+	}
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	finalizeGlobalFlags(g, format, timeout, quiet)
+	if strings.TrimSpace(*qgqpBId) == "" {
+		fmt.Fprintln(os.Stderr, "qgqp-b-id 不能为空")
+		return 1
+	}
+	if err := initApp(g, bootstrap.Options{NoStockData: true, AutoMigrateAsync: false}); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	msg := data.NewSettingsApi().UpdateQgqpBId(*qgqpBId)
 	fmt.Println(msg)
 	return 0
 }
