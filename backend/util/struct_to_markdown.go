@@ -158,6 +158,10 @@ func markdownStructSlice(value reflect.Value) string {
 
 // 判断是否应该跳过该字段
 func shouldSkip(field reflect.StructField) bool {
+	// 跳过非导出字段，避免 reflect.Interface panic
+	if field.PkgPath != "" {
+		return true
+	}
 	return field.Tag.Get("md") == "-"
 }
 
@@ -175,6 +179,9 @@ func formatValue(value reflect.Value) string {
 	if !value.IsValid() {
 		return "n/a"
 	}
+	if !value.CanInterface() {
+		return "n/a"
+	}
 
 	// 处理指针
 	if value.Kind() == reflect.Ptr {
@@ -182,6 +189,12 @@ func formatValue(value reflect.Value) string {
 			return "nil"
 		}
 		return formatValue(value.Elem())
+	}
+
+	if value.CanInterface() {
+		if s, ok := value.Interface().(fmt.Stringer); ok {
+			return s.String()
+		}
 	}
 
 	// 处理结构体

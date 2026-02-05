@@ -115,3 +115,4 @@ frontend/package.json.md5
 # cli
 go-stock-cli
 go-stock-cli.exe
+/data/*-journal
