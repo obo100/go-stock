@@ -167,6 +167,8 @@ type FollowedStock struct {
 	Price              float64
 	PriceChange        float64
 	ChangePercent      float64
+	TakeProfit         float64
+	StopLoss           float64
 	AlarmChangePercent float64
 	AlarmPrice         float64
 	Time               time.Time

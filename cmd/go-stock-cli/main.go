@@ -10,6 +10,7 @@ import (
 	"go-stock/backend/aitools"
 	"go-stock/backend/bootstrap"
 	"go-stock/backend/data"
+	"go-stock/backend/db"
 	"go-stock/backend/logger"
 	"go-stock/backend/models"
 	"go-stock/backend/util"
@@ -51,6 +52,7 @@ type AIRequest struct {
 }
 
 func main() {
+	_ = os.Setenv("GO_STOCK_CLI", "1")
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
@@ -72,6 +74,8 @@ func main() {
 		os.Exit(runConfig(os.Args[2:]))
 	case "recommend":
 		os.Exit(runRecommend(os.Args[2:]))
+	case "position":
+		os.Exit(runPosition(os.Args[2:]))
 	case "serve":
 		os.Exit(runServe(os.Args[2:]))
 	case "-h", "--help", "help":
@@ -96,7 +100,12 @@ func printUsage() {
 	fmt.Println("  go-stock-cli config import --file config.json")
 	fmt.Println("  go-stock-cli config add-ai --name \"\" --base-url \"\" --api-key \"\" --model \"\"")
 	fmt.Println("  go-stock-cli config list-ai")
+	fmt.Println("  go-stock-cli config set-qgqp --qgqp-b-id \"YOUR_QGQP_B_ID\"")
 	fmt.Println("  go-stock-cli recommend list [--page 1] [--page-size 10]")
+	fmt.Println("  go-stock-cli position add --code \"sz000001\" --price 10.5 --volume 1000 [--take-profit 12.0] [--stop-loss 9.0]")
+	fmt.Println("  go-stock-cli position list")
+	fmt.Println("  go-stock-cli position sell --code \"sz000001\"")
+	fmt.Println("  go-stock-cli position analyze --question \"分析持仓全部股票操作建议\" --ai-config-id 1 [--enable-tools] [--stream]")
 	fmt.Println("  go-stock-cli serve --listen 127.0.0.1:17688 [--token \"\"]")
 	fmt.Println("")
 	fmt.Println("全局参数:")
@@ -1181,6 +1190,433 @@ func writeJSONLine(w io.Writer, data any) error {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	return enc.Encode(data)
+}
+
+func runPosition(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "缺少子命令 add/list/sell")
+		return 1
+	}
+	switch args[0] {
+	case "add":
+		return runPositionAdd(args[1:])
+	case "list":
+		return runPositionList(args[1:])
+	case "sell":
+		return runPositionSell(args[1:])
+	case "analyze":
+		return runPositionAnalyze(args[1:])
+	default:
+		fmt.Fprintln(os.Stderr, "未知 position 子命令")
+		return 1
+	}
+}
+
+type PositionView struct {
+	Code            string
+	Name            string
+	CostPrice       float64
+	CurrentPrice    float64
+	ChangePercent   float64
+	PositionPercent float64
+	TakeProfit      float64
+	StopLoss        float64
+	ProfitAmount    float64
+	ProfitPercent   float64
+	Volume          int64
+}
+
+type PositionListView struct {
+	TotalCost          float64
+	TotalMarket        float64
+	TotalProfit        float64
+	TotalProfitPercent float64
+	List               []PositionView
+}
+
+func runPositionAdd(args []string) int {
+	fs := flag.NewFlagSet("position add", flag.ContinueOnError)
+	g, format, timeout, quiet := parseGlobalFlags(fs)
+	code := fs.String("code", "", "股票代码")
+	price := fs.Float64("price", 0, "买入价")
+	volume := fs.Int64("volume", 0, "持股数量")
+	takeProfit := fs.Float64("take-profit", 0, "止盈价")
+	stopLoss := fs.Float64("stop-loss", 0, "止损价")
+	if hasHelp(args) {
+		fs.Usage()
+		return 0
+	}
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	finalizeGlobalFlags(g, format, timeout, quiet)
+	if strings.TrimSpace(*code) == "" {
+		fmt.Fprintln(os.Stderr, "code 不能为空")
+		return 1
+	}
+	if *price <= 0 {
+		fmt.Fprintln(os.Stderr, "price 必须大于 0")
+		return 1
+	}
+	if *volume <= 0 {
+		fmt.Fprintln(os.Stderr, "volume 必须大于 0")
+		return 1
+	}
+	if err := initApp(g, bootstrap.Options{NoStockData: true, AutoMigrateAsync: false}); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	stockCode := normalizeStockCode(*code)
+	if stockCode == "" {
+		fmt.Fprintln(os.Stderr, "无效的股票代码")
+		return 1
+	}
+	api := data.NewStockDataApi()
+	msg := api.Follow(stockCode)
+	if strings.Contains(msg, "失败") {
+		fmt.Fprintln(os.Stderr, msg)
+		return 1
+	}
+	_ = api.SetCostPriceAndVolume(*price, *volume, stockCode)
+	if *takeProfit > 0 || *stopLoss > 0 {
+		err := db.Dao.Model(&data.FollowedStock{}).Where("stock_code = ?", strings.ToLower(stockCode)).Updates(map[string]any{
+			"take_profit": *takeProfit,
+			"stop_loss":   *stopLoss,
+		}).Error
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "设置止盈止损失败:", err.Error())
+		}
+	}
+	fmt.Println("持仓保存成功")
+	return 0
+}
+
+func runPositionSell(args []string) int {
+	fs := flag.NewFlagSet("position sell", flag.ContinueOnError)
+	g, format, timeout, quiet := parseGlobalFlags(fs)
+	code := fs.String("code", "", "股票代码")
+	if hasHelp(args) {
+		fs.Usage()
+		return 0
+	}
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	finalizeGlobalFlags(g, format, timeout, quiet)
+	if strings.TrimSpace(*code) == "" {
+		fmt.Fprintln(os.Stderr, "code 不能为空")
+		return 1
+	}
+	if err := initApp(g, bootstrap.Options{NoStockData: true, AutoMigrateAsync: false}); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	stockCode := normalizeStockCode(*code)
+	if stockCode == "" {
+		fmt.Fprintln(os.Stderr, "无效的股票代码")
+		return 1
+	}
+	msg := data.NewStockDataApi().UnFollow(stockCode)
+	fmt.Println(msg)
+	return 0
+}
+
+func runPositionList(args []string) int {
+	fs := flag.NewFlagSet("position list", flag.ContinueOnError)
+	g, format, timeout, quiet := parseGlobalFlags(fs)
+	if hasHelp(args) {
+		fs.Usage()
+		return 0
+	}
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	finalizeGlobalFlags(g, format, timeout, quiet)
+	if err := initApp(g, bootstrap.Options{NoStockData: true, AutoMigrateAsync: false}); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	api := data.NewStockDataApi()
+	view, err := buildPositionListView(api)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	if len(view.List) == 0 {
+		fmt.Println("暂无持仓")
+		return 0
+	}
+	if g.Format == FormatJSON {
+		return writeOutput(os.Stdout, g.Format, view)
+	}
+	fmt.Print(renderPositionListMarkdown(view))
+	return 0
+}
+
+func runPositionAnalyze(args []string) int {
+	fs := flag.NewFlagSet("position analyze", flag.ContinueOnError)
+	g, format, timeout, quiet := parseGlobalFlags(fs)
+	question := fs.String("question", "分析持仓全部股票操作建议", "问题")
+	aiConfigID := fs.Int("ai-config-id", 0, "AI配置ID")
+	sysPromptID := fs.Int("sys-prompt-id", 0, "系统提示词ID")
+	enableTools := fs.Bool("enable-tools", false, "启用工具调用")
+	thinking := fs.Bool("think", false, "启用思考模式")
+	stream := fs.Bool("stream", false, "流式输出")
+	if hasHelp(args) {
+		fs.Usage()
+		return 0
+	}
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	finalizeGlobalFlags(g, format, timeout, quiet)
+	if err := initApp(g, bootstrap.Options{NoStockData: true, AutoMigrateAsync: false}); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	api := data.NewStockDataApi()
+	view, err := buildPositionListView(api)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	if len(view.List) == 0 {
+		fmt.Println("暂无持仓")
+		return 0
+	}
+	configID := resolveAiConfigID(*aiConfigID)
+	if configID == 0 {
+		fmt.Fprintln(os.Stderr, "未找到AI配置，请先使用 config add-ai 或 config import")
+		return 1
+	}
+	ctx := context.Background()
+	if g.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, g.Timeout)
+		defer cancel()
+	}
+	var sysPromptPtr *int
+	if *sysPromptID > 0 {
+		sysPromptPtr = sysPromptID
+	}
+	ai := data.NewDeepSeekOpenAi(ctx, configID)
+	tools := []data.Tool{}
+	if *enableTools {
+		tools = aitools.DefaultTools()
+	}
+	fullQuestion := buildPositionAnalyzeQuestion(*question, view)
+	ch := ai.NewChatStream("", "", fullQuestion, sysPromptPtr, tools, *thinking)
+	if *stream {
+		_, _ = streamMapChannel(os.Stdout, ch, g.Format)
+		return 0
+	}
+	_, result := collectMapChannel(ch)
+	return writeOutput(os.Stdout, g.Format, result)
+}
+
+func buildPositionListView(api *data.StockDataApi) (PositionListView, error) {
+	view := PositionListView{}
+	list := api.GetFollowList(0)
+	if list == nil || len(*list) == 0 {
+		return view, nil
+	}
+	codes := make([]string, 0, len(*list))
+	for _, item := range *list {
+		if item.StockCode != "" {
+			codes = append(codes, item.StockCode)
+		}
+	}
+	priceMap := map[string]data.StockInfo{}
+	if len(codes) > 0 {
+		if infos, err := api.GetStockCodeRealTimeData(codes...); err == nil && infos != nil {
+			for _, info := range *infos {
+				priceMap[strings.ToLower(info.Code)] = info
+			}
+		}
+	}
+	totalCost := 0.0
+	for _, item := range *list {
+		if item.CostPrice > 0 && item.Volume > 0 {
+			totalCost += item.CostPrice * float64(item.Volume)
+		}
+	}
+	for _, item := range *list {
+		code := strings.ToLower(item.StockCode)
+		curPrice := item.Price
+		if info, ok := priceMap[code]; ok {
+			if p, ok := parsePrice(info.Price); ok {
+				curPrice = p
+			}
+			if item.Name == "" && info.Name != "" {
+				item.Name = info.Name
+			}
+		}
+		costPrice := item.CostPrice
+		volume := item.Volume
+		profitAmount := 0.0
+		profitPercent := 0.0
+		if costPrice > 0 && volume > 0 {
+			profitAmount = (curPrice - costPrice) * float64(volume)
+			profitPercent = (curPrice - costPrice) / costPrice * 100
+		}
+		positionPercent := 0.0
+		if totalCost > 0 && costPrice > 0 && volume > 0 {
+			positionPercent = (costPrice * float64(volume)) / totalCost * 100
+		}
+		view.List = append(view.List, PositionView{
+			Code:            item.StockCode,
+			Name:            item.Name,
+			CostPrice:       costPrice,
+			CurrentPrice:    curPrice,
+			ChangePercent:   profitPercent,
+			PositionPercent: positionPercent,
+			TakeProfit:      item.TakeProfit,
+			StopLoss:        item.StopLoss,
+			ProfitAmount:    profitAmount,
+			ProfitPercent:   profitPercent,
+			Volume:          volume,
+		})
+		view.TotalMarket += curPrice * float64(volume)
+		view.TotalCost += costPrice * float64(volume)
+		view.TotalProfit += profitAmount
+	}
+	if view.TotalCost > 0 {
+		view.TotalProfitPercent = view.TotalProfit / view.TotalCost * 100
+	}
+	return view, nil
+}
+
+func buildPositionAnalyzeQuestion(userQuestion string, view PositionListView) string {
+	var b strings.Builder
+	b.WriteString(userQuestion)
+	b.WriteString("\n\n持仓数据：\n")
+	for i, item := range view.List {
+		name := item.Name
+		if name == "" {
+			name = "(未知)"
+		}
+		b.WriteString(fmt.Sprintf("%d. %s (%s) 买入价%.2f 现价%.2f 盈亏%s%% 仓位%.2f%% 止盈%.2f 止损%.2f\n",
+			i+1,
+			name,
+			item.Code,
+			item.CostPrice,
+			item.CurrentPrice,
+			formatSignedFloat(item.ProfitPercent, 2),
+			item.PositionPercent,
+			item.TakeProfit,
+			item.StopLoss,
+		))
+	}
+	b.WriteString(fmt.Sprintf("\n总盈亏: %s (%s%%)\n", formatSignedFloat(view.TotalProfit, 2), formatSignedFloat(view.TotalProfitPercent, 2)))
+	b.WriteString("请给出简洁的持仓操作建议（是否继续持有、止盈止损与仓位建议）。")
+	return b.String()
+}
+
+func renderPositionListMarkdown(view PositionListView) string {
+	if len(view.List) == 0 {
+		return "暂无持仓\n"
+	}
+	var b strings.Builder
+	for _, item := range view.List {
+		name := item.Name
+		if name == "" {
+			name = "(未知)"
+		}
+		b.WriteString("- ")
+		b.WriteString(name)
+		if item.Code != "" {
+			b.WriteString(" (")
+			b.WriteString(item.Code)
+			b.WriteString(")")
+		}
+		b.WriteString(" 买入价:")
+		b.WriteString(fmt.Sprintf("%.2f", item.CostPrice))
+		b.WriteString(" 现价:")
+		b.WriteString(fmt.Sprintf("%.2f", item.CurrentPrice))
+		b.WriteString(" 涨跌幅:")
+		b.WriteString(formatSignedFloat(item.ProfitPercent, 2))
+		b.WriteString("%")
+		b.WriteString(" 仓位:")
+		b.WriteString(fmt.Sprintf("%.2f%%", item.PositionPercent))
+		b.WriteString(" 止盈:")
+		if item.TakeProfit > 0 {
+			b.WriteString(fmt.Sprintf("%.2f", item.TakeProfit))
+		} else {
+			b.WriteString("-")
+		}
+		b.WriteString(" 止损:")
+		if item.StopLoss > 0 {
+			b.WriteString(fmt.Sprintf("%.2f", item.StopLoss))
+		} else {
+			b.WriteString("-")
+		}
+		b.WriteString(" 盈亏:")
+		b.WriteString(formatSignedFloat(item.ProfitAmount, 2))
+		b.WriteString("(")
+		b.WriteString(formatSignedFloat(item.ProfitPercent, 2))
+		b.WriteString("%)\n")
+	}
+	b.WriteString("总盈亏: ")
+	b.WriteString(formatSignedFloat(view.TotalProfit, 2))
+	b.WriteString(" (")
+	b.WriteString(formatSignedFloat(view.TotalProfitPercent, 2))
+	b.WriteString("%)\n")
+	return b.String()
+}
+
+func normalizeStockCode(input string) string {
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return ""
+	}
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ToLower(s)
+	if strings.Contains(s, ".") {
+		parts := strings.Split(s, ".")
+		if len(parts) >= 2 {
+			code := parts[0]
+			market := parts[len(parts)-1]
+			switch market {
+			case "sz", "sh", "bj":
+				return market + code
+			case "hk":
+				return "hk" + code
+			case "us":
+				return "us" + code
+			}
+		}
+	}
+	if strings.HasPrefix(s, "sz") || strings.HasPrefix(s, "sh") || strings.HasPrefix(s, "bj") || strings.HasPrefix(s, "hk") || strings.HasPrefix(s, "us") || strings.HasPrefix(s, "gb_") {
+		return s
+	}
+	if len(s) == 6 && isAllDigits(s) {
+		switch s[0] {
+		case '6':
+			return "sh" + s
+		case '0', '3':
+			return "sz" + s
+		case '8', '9':
+			return "bj" + s
+		}
+	}
+	return s
+}
+
+func isAllDigits(s string) bool {
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func formatSignedFloat(v float64, decimals int) string {
+	format := "%." + strconv.Itoa(decimals) + "f"
+	if v > 0 {
+		return "+" + fmt.Sprintf(format, v)
+	}
+	return fmt.Sprintf(format, v)
 }
 
 // readStdin is reserved for future interactive usage.
