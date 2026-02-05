@@ -5,6 +5,7 @@ import (
 	"errors"
 	"go-stock/backend/db"
 	"go-stock/backend/logger"
+	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -196,6 +197,29 @@ func updateAiConfigs(aiConfigs []*AIConfig) error {
 	//批量新增的配置
 	err = db.Dao.CreateInBatches(addAiConfigs, len(addAiConfigs)).Error
 	return err
+}
+
+// UpdateQgqpBId updates Eastmoney qgqp_b_id.
+func (s *SettingsApi) UpdateQgqpBId(qgqpBId string) string {
+	if strings.TrimSpace(qgqpBId) == "" {
+		return "qgqp_b_id 不能为空"
+	}
+	count := int64(0)
+	db.Dao.Model(&Settings{}).Count(&count)
+	if count == 0 {
+		logger.SugaredLogger.Infof("未找到配置，创建默认配置")
+		result := db.Dao.Model(&Settings{}).Create(&Settings{QgqpBId: qgqpBId})
+		if result.Error != nil {
+			logger.SugaredLogger.Error("创建配置失败:", result.Error)
+			return "创建配置失败: " + result.Error.Error()
+		}
+		return "保存成功"
+	}
+	if err := db.Dao.Model(&Settings{}).Where("id = ?", s.Config.ID).Update("qgqp_b_id", qgqpBId).Error; err != nil {
+		logger.SugaredLogger.Error("更新配置失败:", err)
+		return "更新配置失败: " + err.Error()
+	}
+	return "保存成功"
 }
 
 func GetSettingConfig() *SettingConfig {
