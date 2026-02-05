@@ -517,13 +517,114 @@ func runRecommendList(args []string) int {
 		return 1
 	}
 	if g.Format == FormatMarkdown {
-		content := util.MarkdownTableWithTitle("AI推荐股票列表", pageData.List)
-		fmt.Println(content)
+		fmt.Println(renderRecommendListMarkdown(pageData))
 		return 0
 	}
 	return writeOutput(os.Stdout, g.Format, pageData)
 }
 
+func renderRecommendListMarkdown(pageData *models.AiRecommendStocksPageData) string {
+	if pageData == nil {
+		return "无数据"
+	}
+	if len(pageData.List) == 0 {
+		return "无数据"
+	}
+	var b strings.Builder
+	for _, item := range pageData.List {
+		b.WriteString("- ")
+		b.WriteString(item.StockName)
+		if item.StockCode != "" {
+			b.WriteString(" (")
+			b.WriteString(item.StockCode)
+			b.WriteString(")")
+		}
+		if item.StockCurrentPrice != "" {
+			b.WriteString(" 现价:")
+			b.WriteString(item.StockCurrentPrice)
+		}
+		if item.StockPrice != "" {
+			b.WriteString(" 推荐价:")
+			b.WriteString(item.StockPrice)
+		}
+		if pct, ok := calcChangePct(item.StockPrice, item.StockCurrentPrice); ok {
+			b.WriteString(" 涨跌幅:")
+			b.WriteString(pct)
+		}
+		if item.StockCurrentPriceTime != "" {
+			b.WriteString(" 时间:")
+			b.WriteString(item.StockCurrentPriceTime)
+		}
+		if item.BkName != "" {
+			b.WriteString(" 行业:")
+			b.WriteString(item.BkName)
+		}
+		b.WriteString("\n")
+
+		if item.RecommendReason != "" {
+			b.WriteString("推荐理由: ")
+			b.WriteString(item.RecommendReason)
+			b.WriteString("\n")
+		}
+		if item.RecommendBuyPrice != "" {
+			b.WriteString("建议买入: ")
+			b.WriteString(item.RecommendBuyPrice)
+			b.WriteString("\n")
+		}
+		if item.RecommendStopProfitPrice != "" {
+			b.WriteString("建议止盈: ")
+			b.WriteString(item.RecommendStopProfitPrice)
+			b.WriteString("\n")
+		}
+		if item.RecommendStopLossPrice != "" {
+			b.WriteString("建议止损: ")
+			b.WriteString(item.RecommendStopLossPrice)
+			b.WriteString("\n")
+		}
+		if item.RiskRemarks != "" {
+			b.WriteString("风险提示: ")
+			b.WriteString(item.RiskRemarks)
+			b.WriteString("\n")
+		}
+		if item.Remarks != "" {
+			b.WriteString("备注: ")
+			b.WriteString(item.Remarks)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func calcChangePct(recommendPrice, currentPrice string) (string, bool) {
+	rec, ok := parsePrice(recommendPrice)
+	if !ok || rec <= 0 {
+		return "", false
+	}
+	cur, ok := parsePrice(currentPrice)
+	if !ok {
+		return "", false
+	}
+	pct := (cur - rec) / rec * 100
+	sign := ""
+	if pct > 0 {
+		sign = "+"
+	}
+	return fmt.Sprintf("%s%.2f%%", sign, pct), true
+}
+
+func parsePrice(v string) (float64, bool) {
+	s := strings.TrimSpace(v)
+	if s == "" {
+		return 0, false
+	}
+	s = strings.ReplaceAll(s, ",", "")
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	return f, true
+}
 func runConfigExport(args []string) int {
 	fs := flag.NewFlagSet("config export", flag.ContinueOnError)
 	g, format, timeout, quiet := parseGlobalFlags(fs)

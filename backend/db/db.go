@@ -3,6 +3,7 @@ package db
 import (
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -25,6 +26,11 @@ func Init(sqlitePath string) {
 	case "info", "INFO":
 		level = logger.Info
 	}
+	if level == logger.Info {
+		if v := strings.ToLower(strings.TrimSpace(os.Getenv("GO_STOCK_LOG_STDOUT"))); v == "0" || v == "false" || v == "no" {
+			level = logger.Silent
+		}
+	}
 	dbLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		logger.Config{
@@ -46,6 +52,9 @@ func Init(sqlitePath string) {
 		SkipDefaultTransaction:                   true,
 		PrepareStmt:                              true,
 	})
+	if err == nil {
+		openDb.Logger = openDb.Logger.LogMode(level)
+	}
 	//读写分离提高sqlite效率，防止锁库
 	openDb.Use(dbresolver.Register(
 		dbresolver.Config{
