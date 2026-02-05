@@ -86,50 +86,52 @@ func (s *SettingsApi) Export() string {
 func UpdateConfig(s *SettingConfig) string {
 	count := int64(0)
 	db.Dao.Model(&Settings{}).Count(&count)
-	if count > 0 {
-		db.Dao.Model(&Settings{}).Where("id=?", s.ID).Updates(map[string]any{
-			"local_push_enable":          s.LocalPushEnable,
-			"ding_push_enable":           s.DingPushEnable,
-			"ding_robot":                 s.DingRobot,
-			"update_basic_info_on_start": s.UpdateBasicInfoOnStart,
-			"refresh_interval":           s.RefreshInterval,
-			"open_ai_enable":             s.OpenAiEnable,
-			"tushare_token":              s.TushareToken,
-			"prompt":                     s.Prompt,
-			"check_update":               s.CheckUpdate,
-			"question_template":          s.QuestionTemplate,
-			"crawl_time_out":             s.CrawlTimeOut,
-			"k_days":                     s.KDays,
-			"enable_danmu":               s.EnableDanmu,
-			"browser_path":               s.BrowserPath,
-			"enable_news":                s.EnableNews,
-			"dark_theme":                 s.DarkTheme,
-			"enable_fund":                s.EnableFund,
-			"enable_push_news":           s.EnablePushNews,
-			"enable_only_push_red_news":  s.EnableOnlyPushRedNews,
-			"sponsor_code":               s.SponsorCode,
-			"http_proxy":                 s.HttpProxy,
-			"http_proxy_enabled":         s.HttpProxyEnabled,
-			"enable_agent":               s.EnableAgent,
-			"qgqp_b_id":                  s.QgqpBId,
-		})
-
-		//更新AiConfig
-		err := updateAiConfigs(s.AiConfigs)
-		if err != nil {
-			logger.SugaredLogger.Errorf("更新AI模型服务配置失败: %v", err)
-			return "更新AI模型服务配置失败: " + err.Error()
-		}
-	} else {
+	if count == 0 {
 		logger.SugaredLogger.Infof("未找到配置，创建默认配置")
 		// 创建主配置
-		result := db.Dao.Model(&Settings{}).Create(&Settings{})
+		result := db.Dao.Model(&Settings{}).Create(&s.Settings)
 		if result.Error != nil {
 			logger.SugaredLogger.Error("创建配置失败:", result.Error)
 			return "创建配置失败: " + result.Error.Error()
 		}
+		if s.Settings != nil && s.ID == 0 {
+			s.ID = s.Settings.ID
+		}
 	}
-	return "保存成功！"
+	db.Dao.Model(&Settings{}).Where("id=?", s.ID).Updates(map[string]any{
+		"local_push_enable":          s.LocalPushEnable,
+		"ding_push_enable":           s.DingPushEnable,
+		"ding_robot":                 s.DingRobot,
+		"update_basic_info_on_start": s.UpdateBasicInfoOnStart,
+		"refresh_interval":           s.RefreshInterval,
+		"open_ai_enable":             s.OpenAiEnable,
+		"tushare_token":              s.TushareToken,
+		"prompt":                     s.Prompt,
+		"check_update":               s.CheckUpdate,
+		"question_template":          s.QuestionTemplate,
+		"crawl_time_out":             s.CrawlTimeOut,
+		"k_days":                     s.KDays,
+		"enable_danmu":               s.EnableDanmu,
+		"browser_path":               s.BrowserPath,
+		"enable_news":                s.EnableNews,
+		"dark_theme":                 s.DarkTheme,
+		"enable_fund":                s.EnableFund,
+		"enable_push_news":           s.EnablePushNews,
+		"enable_only_push_red_news":  s.EnableOnlyPushRedNews,
+		"sponsor_code":               s.SponsorCode,
+		"http_proxy":                 s.HttpProxy,
+		"http_proxy_enabled":         s.HttpProxyEnabled,
+		"enable_agent":               s.EnableAgent,
+		"qgqp_b_id":                  s.QgqpBId,
+	})
+
+	// 更新 AiConfig
+	err := updateAiConfigs(s.AiConfigs)
+	if err != nil {
+		logger.SugaredLogger.Errorf("更新AI模型服务配置失败: %v", err)
+		return "更新AI模型服务配置失败: " + err.Error()
+	}
+	return "保存成功"
 }
 
 func updateAiConfigs(aiConfigs []*AIConfig) error {

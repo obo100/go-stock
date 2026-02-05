@@ -14,6 +14,17 @@ import (
 var Dao *gorm.DB
 
 func Init(sqlitePath string) {
+	level := logger.Info
+	switch os.Getenv("GO_STOCK_GORM_LOG") {
+	case "silent", "SILENT":
+		level = logger.Silent
+	case "error", "ERROR":
+		level = logger.Error
+	case "warn", "WARN":
+		level = logger.Warn
+	case "info", "INFO":
+		level = logger.Info
+	}
 	dbLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		logger.Config{
@@ -21,7 +32,7 @@ func Init(sqlitePath string) {
 			Colorful:                  false,
 			IgnoreRecordNotFoundError: true,
 			ParameterizedQueries:      false,
-			LogLevel:                  logger.Info,
+			LogLevel:                  level,
 		},
 	)
 	var openDb *gorm.DB
