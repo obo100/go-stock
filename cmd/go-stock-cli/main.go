@@ -122,6 +122,7 @@ func finalizeGlobalFlags(g *GlobalFlags, format *string, timeout *int, quiet *bo
 	if quiet != nil && *quiet {
 		g.Quiet = true
 		_ = os.Setenv("GO_STOCK_LOG_STDOUT", "0")
+		_ = os.Setenv("GO_STOCK_GORM_LOG", "silent")
 		logger.InitLogger()
 	}
 }
