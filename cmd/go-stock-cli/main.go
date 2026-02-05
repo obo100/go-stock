@@ -266,6 +266,17 @@ func runAISummary(args []string) int {
 		return 1
 	}
 	finalizeGlobalFlags(g, format, timeout, quiet)
+	if ok, err := data.NewMarketNewsApi().IsATradeDay(""); err == nil && !ok {
+		if g.Format == FormatMarkdown {
+			fmt.Println("非交易日")
+			return 0
+		}
+		_ = writeOutput(os.Stdout, g.Format, map[string]any{
+			"message":   "非交易日",
+			"trade_day": false,
+		})
+		return 0
+	}
 	if err := initApp(g, bootstrap.Options{NoStockData: true, AutoMigrateAsync: false}); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return 1
@@ -904,6 +915,13 @@ func handleAISummaryHTTP(w http.ResponseWriter, r *http.Request, g *GlobalFlags)
 	req, err := decodeAIRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if ok, err := data.NewMarketNewsApi().IsATradeDay(""); err == nil && !ok {
+		_ = writeJSON(w, map[string]any{
+			"message":   "非交易日",
+			"trade_day": false,
+		})
 		return
 	}
 	configID := resolveAiConfigID(req.AiConfigID)

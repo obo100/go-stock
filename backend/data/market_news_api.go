@@ -902,6 +902,46 @@ func (m MarketNewsApi) ClsCalendar() []any {
 	return respMap["data"].([]any)
 }
 
+// IsATradeDay checks whether the given date is an A-share trading day.
+// date format: YYYY-MM-DD. If empty, uses today.
+func (m MarketNewsApi) IsATradeDay(date string) (bool, error) {
+	if strings.TrimSpace(date) == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+	url := "https://datacenter-web.eastmoney.com/api/data/v1/get"
+	params := map[string]string{
+		"reportName":  "RPTA_WEB_TRADE_CALENDAR",
+		"columns":     "TRADE_DATE,TRADE_STATUS",
+		"sortColumns": "TRADE_DATE",
+		"sortTypes":   "-1",
+		"pageNumber":  "1",
+		"pageSize":    "1",
+		"source":      "WEB",
+		"client":      "WEB",
+		"filter":      fmt.Sprintf("(TRADE_DATE='%s')", date),
+	}
+	resp, err := resty.New().SetTimeout(time.Duration(10)*time.Second).R().
+		SetHeader("Host", "datacenter-web.eastmoney.com").
+		SetHeader("Referer", "https://data.eastmoney.com/").
+		SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0").
+		SetQueryParams(params).
+		Get(url)
+	if err != nil {
+		logger.SugaredLogger.Errorf("IsATradeDay err:%s", err.Error())
+		return false, err
+	}
+	data := gjson.GetBytes(resp.Body(), "result.data")
+	if !data.Exists() || len(data.Array()) == 0 {
+		return false, fmt.Errorf("trade calendar empty")
+	}
+	item := data.Array()[0]
+	status := gjson.Get(item.String(), "TRADE_STATUS")
+	if status.Int() == 1 || status.String() == "1" {
+		return true, nil
+	}
+	return false, nil
+}
+
 func (m MarketNewsApi) GetGDP() *models.GDPResp {
 	res := &models.GDPResp{}
 
