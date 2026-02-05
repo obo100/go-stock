@@ -40,3 +40,4 @@ go-stock-cli recommend list --page 1 --page-size 10 --format json
 - 在 OpenClaw 中将输出格式固定为 `json`，便于结构化解析
 - 可结合 `--stream` 获取流式输出
 - 若需要生成“推荐股票列表”，请使用 `ai summary` 且开启 `--enable-tools`
+- 避免日志和 CLI 输出混在一起，请使用 `--quiet` 参数
