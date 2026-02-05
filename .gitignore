@@ -111,3 +111,7 @@ dist
 /build/bin/*
 frontend/package.json.md5
 /build/us.json
+
+# cli
+go-stock-cli
+go-stock-cli.exe
